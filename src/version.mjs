@@ -3,7 +3,7 @@ import path from "path";
 
 import { USER_META } from "./paths.mjs";
 
-export const DB_VERSION = '2';
+export const DB_VERSION = '3';
 
 /**
  * @param {string} dir

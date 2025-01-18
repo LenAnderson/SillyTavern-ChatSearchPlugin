@@ -1,11 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, watch } from "node:fs";
 
 
 // SillyTavern
 import { jsonParser } from "../../src/express-common.js";
-import { uuidv4 } from "../../src/util.js";
+import { delay, uuidv4 } from "../../src/util.js";
 import { getAllUserHandles, getUserDirectories } from "../../src/users.js";
 
 // Plugin
@@ -23,11 +23,190 @@ const indexToken = {};
 const indexPromise = {};
 const searchToken = {};
 
+/**@type {{user:string, char:string?, chat:string}[]} */
+const reindexQueue = [];
 
 
+let isProcessingReindexQueue = false;
+const processReindexQueue = async()=>{
+	if (isProcessingReindexQueue) return;
+	if (!reindexQueue.length) return;
+	isProcessingReindexQueue = true;
+	await delay(1000);
+	const done = [];
+	const queue = [];
+	while (reindexQueue.length) {
+		const item = reindexQueue.shift();
+		if (!item) continue;
+		const key = `${item.user}/${item.char ?? ''}/${item.chat}`;
+		if (done.includes(key)) continue;
+		done.push(key);
+		queue.push(item);
+	}
+	let groups = [];
+	while (queue.length) {
+		const item = queue.shift();
+		if (!item) continue;
+		log(item);
+		const dirs = await getUserDirectories(item.user);
+		const { db } = getDb(dirs.user);
+		const isChar = (item.char?.length ?? 0) > 0;
+		const chat = item.chat;
+		const char = item.char;
+		const chatFile = path.resolve(isChar
+			? path.join(dirs.chats, String(item.char), item.chat)
+			: path.join(dirs.groupChats, item.chat)
+		);
+		db.prepare('DELETE FROM chat WHERE absolute_path = ?').run(chatFile);
+		if (!existsSync(chatFile)) {
+			log('remove from index:', chatFile);
+			return;
+		}
+		let group = null;
+		let groupData = null;
+		if (!isChar) {
+			if (!groups.length) {
+				for (const g of readdirSync(dirs.groups)) {
+					const data = JSON.parse(readFileSync(path.join(dirs.groups, g), { encoding:'utf-8' }));
+					groups.push(data);
+				}
+			}
+			groupData = groups.find(it=>it.chats.includes(chat));
+			group = `${groupData.id}.json`;
+		}
+		const meta = isChar
+			? JSON.parse(await readFirstLine(chatFile))
+			: groupData.past_metadata[chat]
+		;
+		const metaHash = isChar
+			? meta.chat_meta_hash ?? `${char}/${chat}`
+			: groupData.past_metadata[chat];
+		;
+		const modified = lstatSync(chatFile).mtimeMs;
+		const fileHash = hashFile(chatFile);
+		const user = item.user;
+		const token = uuidv4();
+		indexToken[user] = uuidv4();
+		if (isChar) log('reindex:', char, chat);
+		else log('reindex:', group, groupData.name, chat);
+		indexFile({
+			char,
+			chat,
+			chatFile,
+			db,
+			fileHash,
+			group,
+			metaHash,
+			modified,
+			token,
+			user,
+		});
+	}
+	isProcessingReindexQueue = false;
+	processReindexQueue();
+};
 
-const reindexFile = async(db, filePath)=>{};
-const indexFile = async()=>{};
+
+const indexFile = async({
+	db,
+	chatFile,
+	metaHash,
+	chat,
+	modified,
+	fileHash,
+	char,
+	group,
+	user,
+	token,
+})=>{
+	const lines = readFileSync(chatFile, { encoding:'utf-8' })
+		.split('\n')
+		.map((line,idx)=>{
+			try { return JSON.parse(line); } catch {}
+		})
+		.filter(it=>it)
+	;
+	if (char) lines.shift();
+	const stmt = db.prepare(`
+		INSERT INTO chat (
+			meta_hash,
+			filename,
+			modified_on,
+			file_hash,
+			character_id,
+			group_id,
+			absolute_path
+		)
+		VALUES (
+			?,
+			?,
+			?,
+			?,
+			?,
+			?,
+			?
+		)
+	`);
+	const chatId = stmt.run(
+		metaHash,
+		chat,
+		modified,
+		fileHash,
+		char,
+		group,
+		chatFile,
+	).lastInsertRowid;
+	for (const [idx, mes] of Object.entries(lines)) {
+		if (indexToken[user] != token) break;
+		const stmt = db.prepare(`
+			INSERT INTO message (
+				chat_id,
+				message_index,
+				swipe_index,
+				name,
+				is_user,
+				is_system
+			)
+			VALUES (
+				?,
+				?,
+				?,
+				?,
+				?,
+				?
+			)
+		`);
+		const mesId = stmt.run(
+			chatId,
+			idx,
+			mes.swipe_id ?? 0,
+			mes.name ?? '',
+			mes.is_user ? 1 : 0,
+			mes.is_system ? 1 : 0,
+		).lastInsertRowid;
+		for (const [idx, swipe] of Object.entries(mes.swipes ?? [mes.mes])) {
+			if (indexToken[user] != token) break;
+			if (!swipe?.length) continue;
+			const stmt = db.prepare(`
+				INSERT INTO swipe (
+					message_id,
+					swipe_index,
+					content,
+					send_date
+				)
+				VALUES (
+					?,
+					?,
+					?,
+					?
+				)
+			`);
+			stmt.run(mesId, idx, swipe, mes.swipe_info?.[idx]?.send_date ?? mes.send_date);
+		}
+	}
+};
+
+
 /**
  * @param {DatabaseSync} db
  * @param {string} user
@@ -82,11 +261,12 @@ const indexFiles = async(db, user, dirs, res = null)=>{
 						},
 					]);
 				}
-				const chatFile = path.join(chatsDir, chat);
+				const chatFile = path.resolve(path.join(chatsDir, chat));
 				const meta = JSON.parse(await readFirstLine(chatFile));
 				const metaHash = meta.chat_hash_id ?? `${char}/${chat}`;
 				const modified = lstatSync(chatFile).mtimeMs;
-				const cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE meta_hash = ?').get(metaHash));
+				let cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE meta_hash = ?').get(metaHash));
+				if (!cache) cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE absolute_path = ?').get(chatFile));
 				if (!cache || cache.modified_on != modified) {
 					found = true;
 					const fileHash = hashFile(chatFile);
@@ -98,87 +278,18 @@ const indexFiles = async(db, user, dirs, res = null)=>{
 						log('index:', char, chat);
 					}
 					indexCount++;
-					const lines = readFileSync(chatFile, { encoding:'utf-8' })
-						.split('\n')
-						.slice(0, -1)
-						.map((line,idx)=>{
-							try {
-								return JSON.parse(line);
-							} catch {}
-						})
-						.filter(it=>it)
-					;
-					const stmt = db.prepare(`
-						INSERT INTO chat (
-							meta_hash,
-							filename,
-							modified_on,
-							file_hash,
-							character_id
-						)
-						VALUES (
-							?,
-							?,
-							?,
-							?,
-							?
-						)
-					`);
-					const chatId = stmt.run(
-						metaHash,
+					indexFile({
+						char,
 						chat,
-						modified,
+						chatFile,
+						db,
 						fileHash,
-						char
-					).lastInsertRowid;
-					for (const [idx, mes] of Object.entries(lines)) {
-						if (indexToken[user] != token) break;
-						const stmt = db.prepare(`
-							INSERT INTO message (
-								chat_id,
-								message_index,
-								swipe_index,
-								name,
-								is_user,
-								is_system
-							)
-							VALUES (
-								?,
-								?,
-								?,
-								?,
-								?,
-								?
-							)
-						`);
-						const mesId = stmt.run(
-							chatId,
-							idx,
-							mes.swipe_id ?? 0,
-							mes.name ?? '',
-							mes.is_user ? 1 : 0,
-							mes.is_system ? 1 : 0,
-						).lastInsertRowid;
-						for (const [idx, swipe] of Object.entries(mes.swipes ?? [mes.mes])) {
-							if (indexToken[user] != token) break;
-							if (!swipe?.length) continue;
-							const stmt = db.prepare(`
-								INSERT INTO swipe (
-									message_id,
-									swipe_index,
-									content,
-									send_date
-								)
-								VALUES (
-									?,
-									?,
-									?,
-									?
-								)
-							`);
-							stmt.run(mesId, idx, swipe, mes.swipe_info?.[idx]?.send_date ?? mes.send_date);
-						}
-					}
+						group: null,
+						metaHash,
+						modified,
+						token,
+						user,
+					});
 				} else {
 					cacheCount++;
 				}
@@ -212,12 +323,13 @@ const indexFiles = async(db, user, dirs, res = null)=>{
 						},
 					]);
 				}
-				const chatFile = path.join(chatDir, `${chat}.jsonl`);
+				const chatFile = path.resolve(path.join(chatDir, `${chat}.jsonl`));
 				if (!existsSync(chatFile)) continue;
 				const meta = groupData.past_metadata[chat];
 				const metaHash = meta?.chat_hash_id ?? `${group}/${chat}`;
 				const modified = lstatSync(chatFile).mtimeMs;
-				const cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE meta_hash = ?').get(metaHash));
+				let cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE meta_hash = ?').get(metaHash));
+				if (!cache) cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE absolute_path = ?').get(chatFile));
 				if (!cache || cache.modified_on != modified) {
 					found = true;
 					const fileHash = hashFile(chatFile)
@@ -229,85 +341,18 @@ const indexFiles = async(db, user, dirs, res = null)=>{
 						log('index:', groupData.name, chat);
 					}
 					indexCount++;
-					const lines = readFileSync(chatFile, { encoding:'utf-8' })
-						.split('\n')
-						.map((line,idx)=>{
-							try {
-								return JSON.parse(line);
-							} catch {}
-						})
-						.filter(it=>it)
-					;
-					const stmt = db.prepare(`INSERT INTO chat (
-							meta_hash,
-							filename,
-							modified_on,
-							file_hash,
-							group_id
-						)
-						VALUES (
-							?,
-							?,
-							?,
-							?,
-							?
-						)
-					`);
-					const chatId = stmt.run(
-						metaHash,
+					indexFile({
+						char: null,
+						chatFile,
 						chat,
-						modified,
+						db,
 						fileHash,
-						groupData.id
-					).lastInsertRowid;
-					for (const [idx, mes] of Object.entries(lines)) {
-						if (indexToken[user] != token) break;
-						const stmt = db.prepare(`
-							INSERT INTO message (
-								chat_id,
-								message_index,
-								swipe_index,
-								name,
-								is_user,
-								is_system
-							)
-							VALUES (
-								?,
-								?,
-								?,
-								?,
-								?,
-								?
-							)
-						`);
-						const mesId = stmt.run(
-							chatId,
-							idx,
-							mes.swipe_id ?? 0,
-							mes.name,
-							mes.is_user ? 1 : 0,
-							mes.is_system ? 1 : 0
-						).lastInsertRowid;
-						for (const [idx, swipe] of Object.entries(mes.swipes ?? [mes.mes])) {
-							if (indexToken[user] != token) break;
-							if (!swipe?.length) continue;
-							const stmt = db.prepare(`
-								INSERT INTO swipe (
-									message_id,
-									swipe_index,
-									content,
-									send_date
-								)
-								VALUES (
-									?,
-									?,
-									?,
-									?
-								)
-							`);
-							stmt.run(mesId, idx, swipe, mes.swipe_info?.[idx]?.send_date ?? mes.send_date);
-						}
-					}
+						group,
+						metaHash,
+						modified,
+						token,
+						user,
+					});
 				} else {
 					cacheCount++;
 				}
@@ -350,14 +395,26 @@ const search = async(db, user, dirs, query, options, res)=>{
 	})).all(sqlQuery, options.limit));
 	if (searchToken[user] != token) return null;
 	let removeCount = 0;
+	const checked = [];
+	const missing = [];
 	for (let i = matches.length - 1; i >= 0; i--) {
 		const row = matches[i];
 		if (searchToken[user] != token) return null;
-		const filePath = row.character_id == null
-			? path.join(dirs.groupChats, row.filename)
+		const filePath = !row.character_id?.length
+			? path.join(dirs.groupChats, `${row.filename}.jsonl`)
 			: path.join(dirs.chats, row.character_id, row.filename)
 		;
-		if (existsSync(filePath)) continue;
+		if (checked.includes(filePath)) {
+			if (missing[filePath]) continue;
+		} else {
+			checked.push(filePath);
+			if (existsSync(filePath)) {
+				missing[filePath] = true;
+				continue;
+			}
+		}
+		missing[filePath] = false;
+		log('remove from index:', filePath);
 		removeCount++;
 		count--;
 		db.prepare('DELETE FROM chat WHERE id = ?').run(row.chat_id);
@@ -385,6 +442,36 @@ const initIndex = async()=>{
 			setVersion(dirs.user);
 		}
 		await indexFiles(db, handle, dirs);
+	}
+};
+
+const initWatchers = async()=>{
+	log('initWatchers');
+	const handles = await getAllUserHandles();
+	for (const handle of handles) {
+		log(handle);
+		const dirs = await getUserDirectories(handle);
+		watch(dirs.chats, { recursive:true }, (eventType, filename)=>{
+			log('watcher:', 'chats', eventType, filename);
+			if (!filename?.endsWith('.jsonl')) return;
+			const [char, chat] = filename?.split(/[\\/]/);
+			reindexQueue.push({
+				user: handle,
+				char,
+				chat,
+			});
+			processReindexQueue();
+		});
+		watch(dirs.groupChats, { recursive:true }, (eventType, filename)=>{
+			log('watcher:', 'group chats', eventType, filename);
+			if (!filename?.endsWith('.jsonl')) return;
+			reindexQueue.push({
+				user: handle,
+				char: null,
+				chat: filename,
+			});
+			processReindexQueue();
+		});
 	}
 };
 
@@ -428,6 +515,7 @@ const registerEndpoints = (router)=>{
 export async function init(router) {
 	log('init');
 	await initIndex();
+	await initWatchers();
 	registerEndpoints(router);
 }
 export async function exit() {}

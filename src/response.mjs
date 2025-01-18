@@ -5,6 +5,8 @@
  * @property {string} text
  */
 
+import { log } from "./console.mjs";
+
 
 /**
  *
@@ -14,6 +16,7 @@
  */
 export const writeStatus = (res, message, progress = [])=>{
     if (!res) return;
+    log('writeStatus', message);
     res.write(JSON.stringify({
         type: 'status',
         message,

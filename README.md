@@ -1,6 +1,6 @@
 # SillyTavern Chat Search Server Plugin
 
-?
+🔍
 
 
 ## Requirements

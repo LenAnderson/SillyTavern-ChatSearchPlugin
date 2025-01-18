@@ -32,6 +32,7 @@ export const getDb = (userDir)=>{
  * @property {string} file_hash
  * @property {string} character_id
  * @property {string} group_id
+ * @property {string} absolute_path
  */
 
 /**
@@ -92,7 +93,8 @@ export const setup = (db)=>{
 			modified_on NUMBER,
 			file_hash TEXT,
 			character_id TEXT,
-			group_id TEXT
+			group_id TEXT,
+			absolute_path TEXT
 		);
 		CREATE TABLE message (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
