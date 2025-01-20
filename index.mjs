@@ -72,6 +72,7 @@ const processReindexQueue = async()=>{
 				}
 			}
 			groupData = groups.find(it=>it.chats.includes(chat));
+			if (!groupData) continue;
 			group = `${groupData.id}.json`;
 		}
 		const meta = isChar
