@@ -158,7 +158,6 @@ const indexFile = async({
 		chatFile,
 	).lastInsertRowid;
 	for (const [idx, mes] of Object.entries(lines)) {
-		if (indexToken[user] != token) break;
 		const stmt = db.prepare(`
 			INSERT INTO message (
 				chat_id,
@@ -186,7 +185,6 @@ const indexFile = async({
 			mes.is_system ? 1 : 0,
 		).lastInsertRowid;
 		for (const [idx, swipe] of Object.entries(mes.swipes ?? [mes.mes])) {
-			if (indexToken[user] != token) break;
 			if (!swipe?.length) continue;
 			const stmt = db.prepare(`
 				INSERT INTO swipe (
