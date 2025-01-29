@@ -110,7 +110,7 @@ export const setup = (db)=>{
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			message_id INTEGER,
 			swipe_index INTEGER,
-			send_date TEXT,
+			send_date TEXT NULL,
 			content TEXT,
 			FOREIGN KEY (message_id) REFERENCES message(id) ON DELETE CASCADE
 		);
