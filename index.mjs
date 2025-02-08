@@ -71,7 +71,7 @@ const processReindexQueue = async()=>{
 					groups.push(data);
 				}
 			}
-			groupData = groups.find(it=>it.chats.includes(chat));
+			groupData = groups.find(it=>it.chats.includes(chat.replace(/\.jsonl$/, '')));
 			if (!groupData) continue;
 			group = `${groupData.id}.json`;
 		}
