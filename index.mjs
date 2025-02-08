@@ -148,15 +148,21 @@ const indexFile = async({
 			?
 		)
 	`);
-	const chatId = stmt.run(
-		metaHash,
-		chat,
-		modified,
-		fileHash,
-		char,
-		group,
-		chatFile,
-	).lastInsertRowid;
+	let chatId;
+	try {
+		chatId = stmt.run(
+			metaHash,
+			chat,
+			modified,
+			fileHash,
+			char,
+			group,
+			chatFile,
+		).lastInsertRowid;
+	} catch (ex) {
+		error('INSERT INTO chat', ex);
+		return;
+	}
 	for (const [idx, mes] of Object.entries(lines)) {
 		const stmt = db.prepare(`
 			INSERT INTO message (
@@ -176,14 +182,20 @@ const indexFile = async({
 				?
 			)
 		`);
-		const mesId = stmt.run(
-			chatId,
-			idx,
-			mes.swipe_id ?? 0,
-			mes.name ?? '',
-			mes.is_user ? 1 : 0,
-			mes.is_system ? 1 : 0,
-		).lastInsertRowid;
+		let mesId;
+		try {
+			mesId = stmt.run(
+				chatId,
+				idx,
+				mes.swipe_id ?? 0,
+				mes.name ?? '',
+				mes.is_user ? 1 : 0,
+				mes.is_system ? 1 : 0,
+			).lastInsertRowid;
+		} catch (ex) {
+			error('INSERT INTO message', ex);
+			continue;
+		}
 		for (const [idx, swipe] of Object.entries(mes.swipes ?? [mes.mes])) {
 			if (!swipe?.length) continue;
 			const stmt = db.prepare(`
@@ -200,7 +212,11 @@ const indexFile = async({
 					?
 				)
 			`);
-			stmt.run(mesId, idx, swipe, mes.swipe_info?.[idx]?.send_date ?? mes.send_date);
+			try {
+				stmt.run(mesId, idx, swipe, mes.swipe_info?.[idx]?.send_date ?? mes.send_date ?? null);
+			} catch (ex) {
+				error('INSERT INTO swipe', ex);
+			}
 		}
 	}
 };
