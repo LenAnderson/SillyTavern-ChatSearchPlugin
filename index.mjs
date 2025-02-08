@@ -467,8 +467,8 @@ const initWatchers = async()=>{
 		log(handle);
 		const dirs = await getUserDirectories(handle);
 		watch(dirs.chats, { recursive:true }, (eventType, filename)=>{
-			log('watcher:', 'chats', eventType, filename);
 			if (!filename?.endsWith('.jsonl')) return;
+			log('watcher:', new Date().toISOString(), 'chats', eventType, filename);
 			const [char, chat] = filename?.split(/[\\/]/);
 			reindexQueue.push({
 				user: handle,
