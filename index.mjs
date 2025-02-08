@@ -200,7 +200,13 @@ const indexFile = async({
 					?
 				)
 			`);
-			stmt.run(mesId, idx, swipe, mes.swipe_info?.[idx]?.send_date ?? mes.send_date);
+			stmt.run(
+    mesId,
+    idx,
+    swipe,
+    (mes.swipe_info?.[idx]?.send_date ?? mes.send_date ?? null)
+);
+
 		}
 	}
 };
