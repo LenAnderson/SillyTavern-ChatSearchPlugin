@@ -493,7 +493,9 @@ const initWatchers = async()=>{
 const registerEndpoints = (router)=>{
 	log('registerEndpoints');
 	router.get('/', jsonParser, (req, res)=>{
-		res.send('chat search plugin is active');
+		res.send({
+			version: '1.0.0',
+		});
 	});
 
 	router.post('/search', jsonParser, async(/**@type {import('express').Request}*/req, /**@type {import('express').Response}*/res)=>{
