@@ -60,7 +60,7 @@ const processReindexQueue = async()=>{
 		db.prepare('DELETE FROM chat WHERE absolute_path = ?').run(chatFile);
 		if (!existsSync(chatFile)) {
 			log('remove from index:', chatFile);
-			return;
+			continue;
 		}
 		let group = null;
 		let groupData = null;
