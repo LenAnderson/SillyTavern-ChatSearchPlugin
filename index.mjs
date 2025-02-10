@@ -387,7 +387,7 @@ const indexFiles = async(db, user, dirs, res = null)=>{
  * @param {DatabaseSync} db
  * @param {string} query
  */
-const search = async(db, user, dirs, query, options, res)=>{
+const search = async(db, user, dirs, query, options)=>{
 	log('search', user, query, options);
 	const token = uuidv4();
 	searchToken[user] = token;
@@ -499,7 +499,7 @@ const registerEndpoints = (router)=>{
 	});
 
 	router.post('/search', jsonParser, async(/**@type {import('express').Request}*/req, /**@type {import('express').Response}*/res)=>{
-		log('/chatsearch/search', req.body.query);
+		log('/chatsearch/search', req.body.query, req.body.options);
 		res.writeHead(200, {
 			'Content-Type': "text/event-stream",
 			'Cache-Control': "no-cache",
@@ -515,7 +515,7 @@ const registerEndpoints = (router)=>{
 			await indexFiles(db, req.user.profile.handle, req.user.directories);
 		}
 		writeStatus(res, 'searching');
-		const result = await search(db, req.user.profile.handle, req.user.directories, req.body.query, req.body.options, res);
+		const result = await search(db, req.user.profile.handle, req.user.directories, req.body.query, req.body.options);
 		db.close();
 		if (result == null) {
 			res.end();
