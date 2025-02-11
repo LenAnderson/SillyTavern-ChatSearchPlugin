@@ -10,7 +10,7 @@ import { log } from "./console.mjs";
  * @param {string} userDir
  * @returns {{dbExists:boolean, db:DatabaseSync}}
  */
-export const getDb = (userDir)=>{
+export const getDb = (userDir, readOnly = false)=>{
 	log('getDb', userDir);
 	const dir = path.resolve(path.join(userDir, 'ChatSearch'));
 	const dbPath = path.resolve(path.join(dir, 'index.db'));
@@ -18,7 +18,7 @@ export const getDb = (userDir)=>{
 		mkdirSync(dir, { recursive:true });
 	}
 	const dbExists = existsSync(dbPath);
-	const db = new DatabaseSync(dbPath);
+	const db = new DatabaseSync(dbPath, { readOnly: dbExists && readOnly });
 	return { dbExists, db };
 };
 
