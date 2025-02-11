@@ -506,7 +506,7 @@ const registerEndpoints = (router)=>{
 			'Connection': "keep-alive",
 			'Content-Encoding': 'none',
 		});
-		const { dbExists, db } = getDb(req.user.directories.user);
+		const { dbExists, db } = getDb(req.user.directories.user, true);
 		if (!dbExists) {
 			// this should never happen unless the index file is removed while ST is running
 			warn('db file missing!', req.user.profile.handle);
