@@ -79,9 +79,7 @@ const processReindexQueue = async()=>{
 			? JSON.parse(await readFirstLine(chatFile))
 			: groupData.past_metadata[chat]
 		;
-		const metaHash = isChar
-			? meta.chat_meta_hash ?? `${char}/${chat}`
-			: groupData.past_metadata[chat]?.chat_id_hash;
+		const metaHash = `${char}/${chat}`;
 		;
 		const modified = lstatSync(chatFile).mtimeMs;
 		const fileHash = hashFile(chatFile);
@@ -278,7 +276,7 @@ const indexFiles = async(db, user, dirs, res = null)=>{
 				}
 				const chatFile = path.resolve(path.join(chatsDir, chat));
 				const meta = JSON.parse(await readFirstLine(chatFile));
-				const metaHash = meta?.chat_hash_id ?? meta?.chat_id_hash ?? `${char}/${chat}`;
+				const metaHash = `${char}/${chat}`;
 				const modified = lstatSync(chatFile).mtimeMs;
 				let cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE meta_hash = ?').get(metaHash));
 				if (!cache) cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE absolute_path = ?').get(chatFile));
@@ -341,7 +339,7 @@ const indexFiles = async(db, user, dirs, res = null)=>{
 				const chatFile = path.resolve(path.join(chatDir, `${chat}.jsonl`));
 				if (!existsSync(chatFile)) continue;
 				const meta = groupData.past_metadata[chat];
-				const metaHash = meta?.chat_hash_id ?? meta?.chat_id_hash ?? `${group}/${chat}`;
+				const metaHash = `${group}/${chat}`;
 				const modified = lstatSync(chatFile).mtimeMs;
 				let cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE meta_hash = ?').get(metaHash));
 				if (!cache) cache = /**@type {import("./src/database.mjs").chatRow}*/(db.prepare('SELECT * FROM chat WHERE absolute_path = ?').get(chatFile));
