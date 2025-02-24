@@ -57,6 +57,7 @@ export const getDb = (userDir, readOnly = false)=>{
 
 /**
  * @typedef {Object} resultRow
+ * @property {string} handle
  * @property {number} chat_id
  * @property {string} character_id
  * @property {string} group_id
@@ -134,6 +135,7 @@ export const buildQuery = (options = { count:false, swipes:false, hidden:false, 
 		options.count
 			? '	COUNT(1) AS results'
 			: `
+				? AS handle,
 				c.id AS chat_id,
 				c.character_id,
 				c.group_id,
