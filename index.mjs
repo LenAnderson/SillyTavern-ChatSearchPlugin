@@ -512,7 +512,7 @@ const registerEndpoints = (router)=>{
 	log('registerEndpoints');
 	router.get('/', jsonParser, (req, res)=>{
 		res.send({
-			version: '1.0.0',
+			version: '1.1.0',
 		});
 	});
 
