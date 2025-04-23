@@ -85,7 +85,6 @@ const processReindexQueue = async()=>{
 			: groupData.past_metadata[chat]
 		;
 		const metaHash = `${char}/${chat}`;
-		;
 		const modified = (await lstatAsync(chatFile)).mtimeMs;
 		const fileHash = hashFile(chatFile);
 		const user = item.user;
@@ -111,6 +110,22 @@ const processReindexQueue = async()=>{
 };
 
 
+/**
+ *
+ * @param {{
+ * db: DatabaseSync,
+ * chatFile: string,
+ * metaHash: string,
+ * chat: string,
+ * modified: Date
+ * fileHash: string,
+ * char: string,
+ * group: string,
+ * user: string,
+ * token: string,
+ * }} param0
+ * @returns
+ */
 const indexFile = async({
 	db,
 	chatFile,
@@ -289,10 +304,15 @@ const indexFiles = async(db, user, dirs, res = null)=>{
 				if (!cache || cache.modified_on != modified) {
 					found = true;
 					const fileHash = hashFile(chatFile);
-					if (cache && cache.file_hash != fileHash) {
-						db.prepare('DELETE FROM chat WHERE id = ?').run(cache.id);
-						log('reindex:', char, chat);
-						reindexCount++;
+					if (cache) {
+						if (cache.file_hash != fileHash) {
+							db.prepare('DELETE FROM chat WHERE id = ?').run(cache.id);
+							log('reindex:', char, chat, 'hash diff:', cache.file_hash, 'vs', fileHash);
+							reindexCount++;
+						} else {
+							cacheCount++;
+							continue;
+						}
 					} else {
 						log('index:', char, chat);
 					}
@@ -353,10 +373,15 @@ const indexFiles = async(db, user, dirs, res = null)=>{
 				if (!cache || cache.modified_on != modified) {
 					found = true;
 					const fileHash = hashFile(chatFile)
-					if (cache && cache.file_hash != fileHash) {
-						db.prepare('DELETE FROM chat WHERE id = ?;').run(cache.id);
-						log('reindex:', groupData.name, chat);
-						reindexCount++;
+					if (cache) {
+						if (cache.file_hash != fileHash) {
+							db.prepare('DELETE FROM chat WHERE id = ?;').run(cache.id);
+							log('reindex:', groupData.name, chat, 'hash diff:', cache.file_hash, 'vs', fileHash);
+							reindexCount++;
+						} else {
+							cacheCount++;
+							continue;
+						}
 					} else {
 						log('index:', groupData.name, chat);
 					}
